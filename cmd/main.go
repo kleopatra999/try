@@ -14,5 +14,6 @@ func main() {
 	log.Printf("Starting server on port %d", port)
 	http.HandleFunc("/server/", server)
 	http.HandleFunc("/cli/", cli)
+	http.HandleFunc("/", canvas)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }

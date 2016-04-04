@@ -105,7 +105,7 @@ func server(w http.ResponseWriter, r *http.Request) {
 		shmu.Unlock()
 		return
 	}
-	cmd := exec.Command("tile38-server", "-p", fmt.Sprintf("%d", port), "-d", path.Join("data", id))
+	cmd := exec.Command("tile38-server", "-vv", "-p", fmt.Sprintf("%d", port), "-d", path.Join("data", id))
 	erd, err := cmd.StderrPipe()
 	if err != nil {
 		shmu.Unlock()
