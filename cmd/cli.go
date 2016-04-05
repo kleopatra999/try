@@ -36,7 +36,7 @@ func cli(w http.ResponseWriter, r *http.Request) {
 
 	var wrmu sync.Mutex
 
-	cmd := exec.Command("tile38-cli", "-p", fmt.Sprintf("%d", port), "--raw")
+	cmd := exec.Command("tile38-cli", "-p", fmt.Sprintf("%d", port), "--noprompt", "--tty")
 	erd, err := cmd.StderrPipe()
 	if err != nil {
 		log.Printf("error: %s", err.Error())
