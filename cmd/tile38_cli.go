@@ -46,6 +46,7 @@ func tile38CLI(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer func() {
+			conn.Close()
 			wrmu.Lock()
 			cmd.Process.Kill()
 			wrmu.Unlock()
@@ -54,12 +55,14 @@ func tile38CLI(w http.ResponseWriter, r *http.Request) {
 		for {
 			line, err := rd.ReadBytes('\n')
 			if err != nil {
+				log.Printf("error: %s", err.Error())
 				return
 			}
 			wrmu.Lock()
 			err = conn.WriteMessage(websocket.TextMessage, append([]byte(`stderr: `), line...))
 			wrmu.Unlock()
 			if err != nil {
+				log.Printf("error: %s", err.Error())
 				return
 			}
 		}
@@ -73,6 +76,7 @@ func tile38CLI(w http.ResponseWriter, r *http.Request) {
 	defer ord.Close()
 	go func() {
 		defer func() {
+			conn.Close()
 			wrmu.Lock()
 			cmd.Process.Kill()
 			wrmu.Unlock()
@@ -81,12 +85,14 @@ func tile38CLI(w http.ResponseWriter, r *http.Request) {
 		for {
 			line, err := rd.ReadBytes('\n')
 			if err != nil {
+				log.Printf("error: %s", err.Error())
 				return
 			}
 			wrmu.Lock()
 			err = conn.WriteMessage(websocket.TextMessage, append([]byte(`stdout: `), line...))
 			wrmu.Unlock()
 			if err != nil {
+				log.Printf("error: %s", err.Error())
 				return
 			}
 		}
@@ -105,6 +111,7 @@ func tile38CLI(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer func() {
+			conn.Close()
 			wrmu.Lock()
 			cmd.Process.Kill()
 			wrmu.Unlock()
@@ -112,6 +119,7 @@ func tile38CLI(w http.ResponseWriter, r *http.Request) {
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
+				log.Printf("error: %s", err.Error())
 				return
 			}
 			s := string(msg)
@@ -123,6 +131,7 @@ func tile38CLI(w http.ResponseWriter, r *http.Request) {
 			}
 			_, err = fmt.Fprintf(iwr, "%s\n", s)
 			if err != nil {
+				log.Printf("error: %s", err.Error())
 				return
 			}
 		}

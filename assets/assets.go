@@ -85,7 +85,7 @@ func consoleJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "console.js", size: 268376, mode: os.FileMode(420), modTime: time.Unix(1459949970, 0)}
+	info := bindataFileInfo{name: "console.js", size: 268376, mode: os.FileMode(420), modTime: time.Unix(1459956196, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -105,7 +105,7 @@ func consoleJsMap() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "console.js.map", size: 16703, mode: os.FileMode(420), modTime: time.Unix(1459949970, 0)}
+	info := bindataFileInfo{name: "console.js.map", size: 16703, mode: os.FileMode(420), modTime: time.Unix(1459956196, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
