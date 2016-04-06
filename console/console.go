@@ -8,7 +8,7 @@ import (
 	"github.com/tile38/play/terminal"
 )
 
-const prompt = "\x1b[1m\x1b[37mtile38>\x1b[0m "
+const prompt = "\x1b[1m\x1b[37m%s>\x1b[0m "
 
 type Console struct {
 	terminal     *terminal.Terminal
@@ -18,29 +18,47 @@ type Console struct {
 	history      []string
 	historyIdx   int
 	lastInput    string
+	service      string
+	prompt       string
 }
 
-func New(parent *js.Object) (*Console, error) {
+func New(parent *js.Object, service string) (*Console, error) {
 	t, err := terminal.New(parent)
 	if err != nil {
 		return nil, err
 	}
 	c := &Console{
 		terminal: t,
+		service:  service,
+		prompt:   strings.Replace(prompt, "%s", service, -1),
 	}
+	c.showMessage()
 	c.loadServer()
 	c.loadHistory()
 	return c, nil
 }
 
+func (c *Console) showMessage() {
+	// msg := "\x1b[37m\x1b[1mWelcome to Try Tile38, a demonstration of the Tile38 database!\x1b[0m\n"
+	// msg += "\n"
+	// msg += "Please type \x1b[37m\x1b[1mHELP\x1b[0m to see a list of supported commands.\n"
+
+	// msg += "\n\n"
+
+	// c.terminal.WriteString(msg)
+}
+
 func (c *Console) loadServer() {
-	id := js.Global.Get("localStorage").Call("getItem", "tile38:session:id").String()
+	id := js.Global.Get("localStorage").Call("getItem", c.service+":session:id").String()
+	if id == "null" {
+		id = ""
+	}
 	host := js.Global.Get("window").Get("location").Get("host").String()
 	scheme := "ws"
 	if js.Global.Get("window").Get("location").Get("protocol").String() == "https:" {
 		scheme = "wss"
 	}
-	ws := js.Global.Get("WebSocket").New(scheme + "://" + host + "/server/" + id)
+	ws := js.Global.Get("WebSocket").New(scheme + "://" + host + "/" + c.service + "-server/" + id)
 	ws.Call("addEventListener", "close", func(ev *js.Object) {
 		println("server closed")
 		c.terminal.ClearInput()
@@ -51,9 +69,6 @@ func (c *Console) loadServer() {
 		println("server opened")
 		c.serverOpened = true
 	})
-	ws.Call("addEventListener", "error", func() {
-		println("server error")
-	})
 	ws.Call("addEventListener", "message", func(ev *js.Object) {
 		str := ev.Get("data").String()
 		switch {
@@ -62,9 +77,9 @@ func (c *Console) loadServer() {
 			//c.terminal.WriteString(invalidid + ": invalid session id\r\n")
 		case strings.HasPrefix(str, "id: "):
 			c.id = str[4:]
-			js.Global.Get("localStorage").Call("setItem", "tile38:session:id", c.id)
+			js.Global.Get("localStorage").Call("setItem", c.service+":session:id", c.id)
 			println(c.id)
-		case strings.HasPrefix(str, "stderr: "):
+		case strings.HasPrefix(str, "stderr: ") || strings.HasPrefix(str, "stdout: "):
 			if !c.clid {
 				s := str[8:]
 				c.terminal.WriteString(s)
@@ -73,9 +88,6 @@ func (c *Console) loadServer() {
 					c.clid = true
 				}
 			}
-
-		case strings.HasPrefix(str, "stdout: "):
-			c.terminal.WriteString(str[8:])
 		}
 	})
 }
@@ -88,7 +100,7 @@ func (c *Console) loadCLI() {
 	if js.Global.Get("window").Get("location").Get("protocol").String() == "https:" {
 		scheme = "wss"
 	}
-	ws := js.Global.Get("WebSocket").New(scheme + "://" + host + "/cli/" + c.id)
+	ws := js.Global.Get("WebSocket").New(scheme + "://" + host + "/" + c.service + "-cli/" + c.id)
 
 	ws.Call("addEventListener", "close", func(ev *js.Object) {
 		println("cli closed")
@@ -108,13 +120,8 @@ func (c *Console) loadCLI() {
 	ws.Call("addEventListener", "open", func() {
 		println("cli opened")
 		c.terminal.WriteString("\n")
-		c.terminal.Prompt(prompt)
+		c.terminal.Prompt(c.prompt)
 		c.terminal.Input = func(s string) {
-			if strings.HasPrefix(strings.ToLower(s), "follow ") {
-				c.terminal.WriteString("\x1b[31mSorry but FOLLOW is disabled.\x1b[0m\n")
-				c.terminal.Prompt(prompt)
-				return
-			}
 			if strings.HasPrefix(strings.ToLower(s), "aof ") {
 				lastLive = true
 			} else {
@@ -178,7 +185,7 @@ func (c *Console) loadCLI() {
 			return
 		}
 		if !noMorePrompts {
-			c.terminal.Prompt(prompt)
+			c.terminal.Prompt(c.prompt)
 		}
 	})
 }
@@ -186,7 +193,7 @@ func (c *Console) loadCLI() {
 var histdel = "\n_HISTDEL_\n"
 
 func (c *Console) loadHistory() {
-	history := js.Global.Get("localStorage").Call("getItem", "tile38:history").String()
+	history := js.Global.Get("localStorage").Call("getItem", c.service+":history").String()
 	if history != "null" {
 		c.history = strings.Split(history, histdel)
 	}
@@ -194,6 +201,9 @@ func (c *Console) loadHistory() {
 }
 
 func (c *Console) storeHistory(line string) {
+	defer func() {
+		c.historyIdx = len(c.history)
+	}()
 	if len(c.history) > 0 {
 		if c.history[len(c.history)-1] == line {
 			return
@@ -203,7 +213,6 @@ func (c *Console) storeHistory(line string) {
 	if len(c.history) > 100 {
 		c.history = c.history[len(c.history)-100:]
 	}
-	c.historyIdx = len(c.history)
 	history := strings.Join(c.history, histdel)
-	js.Global.Get("localStorage").Call("setItem", "tile38:history", history)
+	js.Global.Get("localStorage").Call("setItem", c.service+":history", history)
 }

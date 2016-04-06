@@ -386,7 +386,9 @@ func (t *Terminal) loop(timestamp Duration) {
 	}
 	if t.pasted {
 		t.pasted = false
-		t.appendStr(t.textarea.Get("value").String())
+		if t.acceptInput {
+			t.appendStr(t.textarea.Get("value").String())
+		}
 	}
 	if timestamp == 0 || t.timestamp == 0 {
 		t.timestamp = timestamp
@@ -513,10 +515,12 @@ func (t *Terminal) drawBuffer(s string, charIdx int, x, y int, esc bool, escs st
 	cursor := false
 	for _, ch := range s {
 		if esc {
-			if escs == "" && ch != '[' {
+			if escs == "" && ch != '[' && ch != 0x1B {
 				esc = false
 			} else {
-				escs += string(ch)
+				if ch != 0x1B {
+					escs += string(ch)
+				}
 				if ch == 'm' {
 					esc = false
 				}

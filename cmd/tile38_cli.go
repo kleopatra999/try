@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func cli(w http.ResponseWriter, r *http.Request) {
+func tile38CLI(w http.ResponseWriter, r *http.Request) {
 	var id string
 	idp := strings.Split(r.URL.Path, "/")
 	if len(idp) >= 3 {
@@ -114,8 +114,14 @@ func cli(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-
-			_, err = fmt.Fprintf(iwr, "%s\n", string(msg))
+			s := string(msg)
+			if strings.HasPrefix(strings.ToLower(s), "follow ") {
+				wrmu.Lock()
+				conn.WriteMessage(websocket.TextMessage, append([]byte(`stdout: `), []byte("(error) Sorry but FOLLOW is disabled.\n")...))
+				wrmu.Unlock()
+				continue
+			}
+			_, err = fmt.Fprintf(iwr, "%s\n", s)
 			if err != nil {
 				return
 			}

@@ -21,7 +21,7 @@ import (
 var portmu sync.Mutex
 var port = 9850
 
-func nextPort() int {
+func nextTile38Port() int {
 	portmu.Lock()
 	defer portmu.Unlock()
 	port++
@@ -39,7 +39,7 @@ var upgrader = websocket.Upgrader{
 var shmu sync.Mutex
 var idmap = make(map[string]int)
 
-func server(w http.ResponseWriter, r *http.Request) {
+func tile38Server(w http.ResponseWriter, r *http.Request) {
 	var invalidid string
 	var id string
 	idp := strings.Split(r.URL.Path, "/")
@@ -83,11 +83,11 @@ func server(w http.ResponseWriter, r *http.Request) {
 	}
 
 	shmu.Lock()
-	port := nextPort()
+	port := nextTile38Port()
 	for i := 0; i < 50000; i++ {
 		l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
-			port = nextPort()
+			port = nextTile38Port()
 			continue
 		}
 		l.Close()

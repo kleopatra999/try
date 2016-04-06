@@ -20,7 +20,7 @@ func main() {
 	js.Global.Get("document").Get("head").Call("appendChild", sheet)
 	js.Global.Get("document").Set("title", "Tile38 Playground")
 	js.Global.Call("addEventListener", "load", func() {
-		_, err := console.New(js.Global.Get("document").Get("body"))
+		_, err := console.New(js.Global.Get("document").Get("body"), "tile38")
 		if err != nil {
 			println(err.Error())
 			return

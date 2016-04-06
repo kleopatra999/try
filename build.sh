@@ -22,6 +22,8 @@ cd ..
 go build -o play-server cmd/*.go
 
 if [ "$1" == "run" ]; then
-	PATH=$PATH:$GOPATH/src/github.com/tidwall/tile38 ./play-server
+	export PATH=$PATH:$HOME/redis/src 
+	export PATH=$PATH:$GOPATH/src/github.com/tidwall/tile38
+	./play-server
 fi
 
