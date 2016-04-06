@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gopherjs/gopherjs/js"
-	"github.com/tile38/play/terminal"
+	"github.com/tile38/try/terminal"
 )
 
 const prompt = "\x1b[1m\x1b[37m%s>\x1b[0m "

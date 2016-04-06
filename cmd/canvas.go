@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/tile38/play/assets"
+	"github.com/tile38/try/assets"
 )
 
 func canvas(w http.ResponseWriter, r *http.Request) {

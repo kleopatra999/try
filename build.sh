@@ -19,11 +19,11 @@ go-bindata -pkg assets \
 	./...
 cd ..
 
-go build -o play-server cmd/*.go
+go build -o try-server cmd/*.go
 
 if [ "$1" == "run" ]; then
 	export PATH=$PATH:$HOME/redis/src 
 	export PATH=$PATH:$GOPATH/src/github.com/tidwall/tile38
-	./play-server
+	./try-server
 fi
 

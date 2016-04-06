@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/gopherjs/gopherjs/js"
-	"github.com/tile38/play/console"
+	"github.com/tile38/try/console"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 			overflow:hidden;
 		}`)
 	js.Global.Get("document").Get("head").Call("appendChild", sheet)
-	js.Global.Get("document").Set("title", "Tile38 Playground")
+	js.Global.Get("document").Set("title", "Try Tile38")
 	js.Global.Call("addEventListener", "load", func() {
 		_, err := console.New(js.Global.Get("document").Get("body"), "tile38")
 		if err != nil {
