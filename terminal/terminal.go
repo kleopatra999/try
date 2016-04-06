@@ -1,16 +1,24 @@
 package terminal
 
-import "github.com/gopherjs/gopherjs/js"
+import (
+	"bytes"
+	"time"
+
+	"github.com/gopherjs/gopherjs/js"
+)
 
 const (
-	fontSize  = 12
-	padx      = 8
-	pady      = 8
-	baseColor = "#bbb"
-	linepad   = 3
-	font      = "Monaco, Consolas, Menlo, Monospace, \"Times New Roman\", Times"
-	retina    = true
-	dbgBorder = true
+	fontSize        = 12
+	padx            = 8
+	pady            = 8
+	baseColor       = "#bbb"
+	selectionColor  = "#7be"
+	backgroundColor = "#000"
+	linepad         = 3
+	font            = "Monaco, Consolas, Menlo, Monospace, \"Times New Roman\", Times"
+	retina          = true
+	dbgBorder       = false
+	clickDuration   = time.Millisecond * 100
 )
 
 const (
@@ -65,54 +73,130 @@ type Terminal struct {
 	color          string
 	bright         bool
 	mdown          bool
+	rowOffset      int
+	maxRowOffset   int
+	mdownrow       int
+	mdowncol       int
+	mmoverow       int
+	mmovecol       int
+	mtime          time.Time
+	selStart       int
+	selEnd         int
+	selectedString *bytes.Buffer
+	scrollInt      *js.Object
+	scrolling      bool
+	pasted         bool
 }
 
 func New(parent *js.Object) (*Terminal, error) {
 	t := &Terminal{
-		parent: parent,
-		dirty:  true,
+		parent:         parent,
+		dirty:          true,
+		selectedString: &bytes.Buffer{},
 	}
 	js.Global.Call("addEventListener", "resize", func() {
 		t.layout()
 	})
-	js.Global.Get("window").Call("addEventListener", "mousewheel", func(ev *js.Object) bool {
+	js.Global.Get("window").Call("addEventListener", "focus", func(ev *js.Object) bool {
+		t.dirty = true
+		return true
+	})
+	js.Global.Get("window").Call("addEventListener", "blur", func(ev *js.Object) bool {
+		t.dirty = true
+		return true
+	})
+	js.Global.Get("window").Call("addEventListener", "wheel", func(ev *js.Object) bool {
 		deltaY := ev.Get("deltaY").Float()
 		t.scroll(deltaY)
+		t.scrolling = true
+		js.Global.Get("window").Call("clearTimeout", t.scrollInt)
+		t.scrollInt = js.Global.Get("window").Call("setTimeout", func() {
+			t.scrolling = false
+		}, 250)
 		return true
 	})
 
 	js.Global.Get("document").Call("addEventListener", "mousedown", func(ev *js.Object) bool {
 		t.mdown = true
-		x, y := ev.Get("offsetX").Float(), ev.Get("offsetY").Float()
-		println(x, y)
+		t.mdownrow, t.mdowncol = t.getRowColForPixel(ev.Get("offsetX").Float(), ev.Get("offsetY").Float())
+		t.dirty = true
+		t.mtime = time.Now()
+		t.selStart = 0
+		t.selEnd = 0
+		t.dirty = true
 		return true
 	})
 
 	js.Global.Get("document").Call("addEventListener", "mousemove", func(ev *js.Object) bool {
 		if t.mdown {
-			println("mousemove")
-			x, y := ev.Get("offsetX").Float(), ev.Get("offsetY").Float()
-			println(x, y)
+			t.mmoverow, t.mmovecol = t.getRowColForPixel(ev.Get("offsetX").Float(), ev.Get("offsetY").Float())
+			t.dirty = true
+			if t.mdownrow == t.mmoverow {
+				rowStart := (t.mdownrow) * t.cols
+				if t.mdowncol == t.mmovecol {
+					t.selStart = 0
+					t.selEnd = 0
+				} else if t.mdowncol < t.mmovecol {
+					t.selStart = rowStart + t.mdowncol
+					t.selEnd = rowStart + t.mmovecol
+				} else {
+					t.selStart = rowStart + t.mmovecol
+					t.selEnd = rowStart + t.mdowncol
+				}
+			} else if t.mdownrow < t.mmoverow {
+				rowStart := (t.mdownrow) * t.cols
+				rowEnd := (t.mmoverow) * t.cols
+				t.selStart = rowStart + t.mdowncol
+				t.selEnd = rowEnd + t.mmovecol
+			} else {
+				rowStart := (t.mmoverow) * t.cols
+				rowEnd := (t.mdownrow) * t.cols
+				t.selStart = rowStart + t.mmovecol
+				t.selEnd = rowEnd + t.mdowncol
+			}
 		}
 		return true
 	})
 
+	// js.Global.Get("window").Call("addEventListener", "click", func(ev *js.Object) bool {
+	// 	row, col := t.getRowColForPixel(ev.Get("offsetX").Float(), ev.Get("offsetY").Float())
+	// 	pos := row*t.cols + col
+
+	// 	if ev.Get("detail").Int() >= 3 {
+	// 		//	println("triple click")
+	// 	} else if ev.Get("detail").Int() >= 2 {
+	// 		//	println("double click")
+	// 		println(pos)
+	// 	} else if ev.Get("detail").Int() >= 1 {
+
+	// 	}
+	// 	return true
+	// })
+
 	js.Global.Get("document").Call("addEventListener", "mouseup", func(ev *js.Object) bool {
-		t.mdown = false
-		println("mouseup")
+		if t.mdown {
+			t.mdown = false
+			t.dirty = true
+		}
 		return true
 	})
 
 	js.Global.Get("document").Call("addEventListener", "keydown", func(ev *js.Object) bool {
-		t.scrollToEnd()
 		code := ev.Get("keyCode").Int()
+		switch code {
+		default:
+			return true
+		case 8, 46, 37, 38, 39, 40:
+		}
+		t.scrollToEndIfNotScrolling()
+
 		if code == 8 || code == 46 {
 			ev.Call("preventDefault")
 			switch code {
 			case 8:
-				t.delete()
+				t.backspace()
 			case 46:
-
+				t.delete()
 			}
 			return false
 		}
@@ -133,27 +217,12 @@ func New(parent *js.Object) (*Terminal, error) {
 		return true
 	})
 	js.Global.Get("document").Call("addEventListener", "keypress", func(ev *js.Object) bool {
-		t.scrollToEnd()
 		if !t.acceptInput {
 			return false
 		}
+		t.scrollToEndIfNotScrolling()
 		code := ev.Get("keyCode").Int()
-		if code == 13 {
-			input := t.input
-			t.WriteString(t.prompt + t.input + "\n")
-			if input != "" {
-				t.input = ""
-				t.cursorIdx = 0
-				t.acceptInput = false
-				if t.Input != nil {
-					t.Input(input)
-				}
-			}
-		} else {
-			t.input = t.input[:t.cursorIdx] + string(rune(code)) + t.input[t.cursorIdx:]
-			t.cursorIdx++
-		}
-		t.dirty = true
+		t.appendChar(rune(code), true)
 		return true
 	})
 
@@ -180,8 +249,45 @@ func New(parent *js.Object) (*Terminal, error) {
 }
 
 func (t *Terminal) getRowColForPixel(x, y float64) (row, col int) {
+	col = int((x - padx) / (float64(t.cols) * t.charWidth) * float64(t.cols))
+	if col < 0 {
+		col = 0
+	} else if col > t.cols {
+		col = t.cols
+	}
+	row = int((y - pady) / (float64(t.rows) * t.charHeight) * float64(t.rows))
+	if row < 0 {
+		row = 0
+	} else if row > t.rows {
+		row = t.rows
+	}
+	row += t.rowOffset
+	return
+}
 
-	return 0, 0
+func (t *Terminal) appendChar(code rune, fromEvent bool) {
+	t.dirty = true
+	if (fromEvent && code == 13) || (!fromEvent && code == 10) {
+		input := t.input
+		t.WriteString(t.prompt + t.input + "\n")
+		if input != "" {
+			t.input = ""
+			t.cursorIdx = 0
+			t.acceptInput = false
+			if t.Input != nil {
+				t.Input(input)
+			}
+		}
+		return
+	}
+	t.input = t.input[:t.cursorIdx] + string(rune(code)) + t.input[t.cursorIdx:]
+	t.cursorIdx++
+}
+
+func (t *Terminal) appendStr(s string) {
+	for _, code := range s {
+		t.appendChar(code, false)
+	}
 }
 
 func (t *Terminal) scrollToEnd() {
@@ -190,9 +296,22 @@ func (t *Terminal) scrollToEnd() {
 	t.dirty = true
 }
 
-func (t *Terminal) delete() {
+func (t *Terminal) scrollToEndIfNotScrolling() {
+	if !t.scrolling {
+		t.scrollToEnd()
+	}
+}
+
+func (t *Terminal) backspace() {
 	if t.cursorIdx > 0 {
 		t.cursorIdx--
+		t.input = t.input[:t.cursorIdx] + t.input[t.cursorIdx+1:]
+		t.dirty = true
+	}
+}
+
+func (t *Terminal) delete() {
+	if t.cursorIdx < len(t.input) {
 		t.input = t.input[:t.cursorIdx] + t.input[t.cursorIdx+1:]
 		t.dirty = true
 	}
@@ -230,6 +349,17 @@ func (t *Terminal) layout() {
 		t.parent.Call("removeChild", t.canvas)
 	}
 
+	if t.textarea == nil {
+		t.textarea = js.Global.Get("document").Call("createElement", "textarea")
+		t.parent.Call("appendChild", t.textarea)
+		t.textarea.Get("style").Set("position", "absolute")
+		t.textarea.Get("style").Set("opacity", 0)
+		t.textarea.Call("addEventListener", "paste", func(ev *js.Object) bool {
+			t.pasted = true
+			return true
+		})
+	}
+
 	t.canvas = js.Global.Get("document").Call("createElement", "canvas")
 	t.ctx = t.canvas.Call("getContext", "2d")
 	t.canvas.Set("width", t.width)
@@ -237,7 +367,9 @@ func (t *Terminal) layout() {
 	t.canvas.Get("style").Set("width", ftoa(t.width/t.ratio)+"px")
 	t.canvas.Get("style").Set("height", ftoa(t.height/t.ratio)+"px")
 	t.canvas.Get("style").Set("position", "absolute")
+	t.canvas.Get("style").Set("backgroundColor", backgroundColor)
 	t.parent.Call("appendChild", t.canvas)
+
 	t.ctx.Set("font", itoa(int(fontSize*t.ratio))+"px "+font)
 	t.charWidth = t.ctx.Call("measureText", "01234567890123456789").Get("width").Float() / 20 / t.ratio
 	t.charHeight = fontSize + linepad
@@ -245,19 +377,16 @@ func (t *Terminal) layout() {
 	t.cols = int((t.width - (padx * 2 * t.ratio)) / (t.charWidth * t.ratio))
 	t.resetFontStyle()
 
-	// if t.textarea == nil {
-	// 	t.textarea = js.Global.Get("document").Call("createElement", "textarea")
-	// 	t.parent.Call("appendChild", t.textarea)
-	// 	t.textarea.Get("style").Set("position", "absolute")
-	// 	//t.textarea.Get("style").Set("display", "none")
-	// }
-
 	t.loop(t.timestamp)
 }
 
 func (t *Terminal) loop(timestamp Duration) {
 	if t.textarea != nil {
 		t.textarea.Call("focus")
+	}
+	if t.pasted {
+		t.pasted = false
+		t.appendStr(t.textarea.Get("value").String())
 	}
 	if timestamp == 0 || t.timestamp == 0 {
 		t.timestamp = timestamp
@@ -310,12 +439,17 @@ func (t *Terminal) drawChar(row, col int, ch rune) {
 	t.ctx.Call("fillText", string(ch), x, y)
 }
 
-func (t *Terminal) drawCursor(row, col int) {
+func (t *Terminal) drawCursor(row, col int, solid bool) {
 	if row < 0 || row >= t.rows || col < 0 || col >= t.cols {
 		return
 	}
 	x, y := (padx*t.ratio + float64(col)*t.charWidth*t.ratio), (pady+float64(row+1)*t.charHeight)*t.ratio
-	t.ctx.Call("fillRect", x, y-(t.charHeight*t.ratio), t.charWidth*t.ratio, t.charHeight*t.ratio)
+	if solid || js.Global.Get("document").Call("hasFocus").Bool() {
+		t.ctx.Call("fillRect", x, y-(t.charHeight*t.ratio), (t.charWidth+0.5)*t.ratio, (t.charHeight+0.5)*t.ratio)
+	} else {
+		t.ctx.Set("lineWidth", 1*t.ratio)
+		t.ctx.Call("strokeRect", x, y-(t.charHeight*t.ratio), (t.charWidth+0.5)*t.ratio, (t.charHeight+0.5)*t.ratio)
+	}
 }
 
 func (t *Terminal) setColor(color string) {
@@ -337,6 +471,7 @@ func (t *Terminal) setFontStyle() {
 	s += font
 	t.ctx.Set("font", s)
 	t.ctx.Set("fillStyle", t.color)
+	t.ctx.Set("strokeStyle", t.color)
 }
 
 func (t *Terminal) resetFontStyle() {
@@ -348,7 +483,7 @@ func (t *Terminal) resetFontStyle() {
 func (t *Terminal) handleESC(esc string) {
 	switch esc {
 	default:
-		println(esc)
+		//println(esc)
 	case clear:
 		t.resetFontStyle()
 	case red:
@@ -373,11 +508,10 @@ func (t *Terminal) handleESC(esc string) {
 		t.setColor("#666")
 	}
 }
-func (t *Terminal) drawBuffer(s string, x, y int, esc bool, escs string, cursorIdx int, blit bool) (int, int, bool, string) {
+func (t *Terminal) drawBuffer(s string, charIdx int, x, y int, esc bool, escs string, cursorIdx int, blit bool) (int, int, int, bool, string) {
 	i := 0
 	cursor := false
 	for _, ch := range s {
-
 		if esc {
 			if escs == "" && ch != '[' {
 				esc = false
@@ -408,21 +542,46 @@ func (t *Terminal) drawBuffer(s string, x, y int, esc bool, escs string, cursorI
 		}
 		if ch == '\r' {
 			x = 0
+			if !blit {
+				pos := (y+(t.rowOffset))*t.cols + x
+				if pos >= t.selStart && pos < t.selEnd {
+					t.selectedString.WriteRune(ch)
+				}
+			}
 		} else if ch == '\n' {
 			x = 0
 			y++
+			if !blit {
+				pos := (y+(t.rowOffset))*t.cols + x
+				if pos >= t.selStart && pos < t.selEnd {
+					t.selectedString.WriteRune(ch)
+				}
+			}
 		} else {
+			pos := (y+(t.rowOffset))*t.cols + x
 			if i == cursorIdx {
 				if blit {
-					t.drawCursor(y, x)
+					t.drawCursor(y, x, false)
 					t.setColor("black")
 					t.drawChar(y, x, ch)
 					t.setColor(baseColor)
 				}
 				cursor = true
 			} else {
-				if blit {
-					t.drawChar(y, x, ch)
+				if pos >= t.selStart && pos < t.selEnd {
+					if blit {
+						t.setColor(selectionColor)
+						t.drawCursor(y, x, true)
+						t.setColor("black")
+						t.drawChar(y, x, ch)
+						t.setColor(baseColor)
+					} else {
+						t.selectedString.WriteRune(ch)
+					}
+				} else {
+					if blit {
+						t.drawChar(y, x, ch)
+					}
 				}
 			}
 			x++
@@ -431,24 +590,45 @@ func (t *Terminal) drawBuffer(s string, x, y int, esc bool, escs string, cursorI
 				y++
 			}
 			i++
+			charIdx++
 		}
 	}
 	if !cursor && cursorIdx != -1 {
 		if blit {
-			t.drawCursor(y, x)
+			t.drawCursor(y, x, false)
 		}
+	}
+	return x, y, charIdx, esc, escs
+}
+
+func (t *Terminal) drawSelectionBlocks() {
+	for y := 0 + t.rowOffset; y < t.rows+t.rowOffset; y++ {
+		for x := 0; x < t.cols; x++ {
+			pos := y*t.cols + x
+			if pos >= t.selStart && pos < t.selEnd {
+				t.setColor(selectionColor)
+				t.drawCursor(y+t.rowOffset*-1, x, true)
+				t.setColor(baseColor)
+			}
+		}
+	}
+}
+
+func (t *Terminal) calcDrawBuffers(x, y int, esc bool, escs string, blit bool) (int, int, bool, string) {
+	charIdx := 0
+	x, y, charIdx, esc, escs = t.drawBuffer(t.buffer, charIdx, x, y, esc, escs, -1, blit)
+	if t.acceptInput {
+		x, y, charIdx, esc, escs = t.drawBuffer(t.prompt, charIdx, x, y, esc, escs, -1, blit)
+		x, y, charIdx, esc, escs = t.drawBuffer(t.input, charIdx, x, y, esc, escs, t.cursorIdx, blit)
 	}
 	return x, y, esc, escs
 }
 
 func (t *Terminal) draw() {
+	t.selectedString.Reset()
+
 	// predraw - do not blit
-	x, y, esc, escs := 0, 0, true, ""
-	x, y, esc, escs = t.drawBuffer(t.buffer, x, y, esc, escs, -1, false)
-	if t.acceptInput {
-		x, y, esc, escs = t.drawBuffer(t.prompt, x, y, esc, escs, -1, false)
-		x, y, esc, escs = t.drawBuffer(t.input, x, y, esc, escs, t.cursorIdx, false)
-	}
+	x, y, esc, escs := t.calcDrawBuffers(0, 0, true, "", false)
 
 	minScrollY := 0.0
 	maxScrollY := float64(y - t.rows + 1)
@@ -458,15 +638,6 @@ func (t *Terminal) draw() {
 
 	t.ctx.Call("save")
 	defer t.ctx.Call("restore")
-
-	if dbgBorder {
-		defer func() {
-			t.ctx.Call("restore")
-			t.ctx.Set("strokeStyle", baseColor)
-			t.ctx.Call("strokeRect", padx*t.ratio, pady*t.ratio, (float64(t.cols) * t.charWidth * t.ratio), (float64(t.rows)*t.charHeight)*t.ratio)
-			t.ctx.Call("save")
-		}()
-	}
 
 	if y >= t.rows {
 		y = (t.rows - y - 1)
@@ -481,12 +652,22 @@ func (t *Terminal) draw() {
 	}
 
 	y += int(t.scrollY)
+	t.rowOffset = 0 - y
+	t.maxRowOffset = int(maxScrollY)
 
-	// real draw
+	// real drawing goes here
+	t.drawSelectionBlocks()
 	x, esc, escs = 0, true, ""
-	x, y, esc, escs = t.drawBuffer(t.buffer, x, y, esc, escs, -1, true)
-	if t.acceptInput {
-		x, y, esc, escs = t.drawBuffer(t.prompt, x, y, esc, escs, -1, true)
-		x, y, esc, escs = t.drawBuffer(t.input, x, y, esc, escs, t.cursorIdx, true)
+	x, y, esc, escs = t.calcDrawBuffers(x, y, esc, escs, true)
+
+	if dbgBorder {
+		t.ctx.Call("restore")
+		t.ctx.Set("strokeStyle", baseColor)
+		t.ctx.Call("strokeRect", padx*t.ratio, pady*t.ratio, (float64(t.cols) * t.charWidth * t.ratio), (float64(t.rows)*t.charHeight)*t.ratio)
+		t.ctx.Call("save")
 	}
+	//t.textarea.Get("style").Set("display", "none")
+	t.textarea.Set("value", t.selectedString.String())
+	t.textarea.Call("focus")
+	t.textarea.Call("select")
 }
