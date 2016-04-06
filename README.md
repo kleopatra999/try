@@ -1,6 +1,6 @@
 #Try Tile38
 
-The source code for the Try Tile38 terminal.
+Try Tile38 is an HTML5 + Canvas demo app written entirely in Go.
 
 [Try Tile38](http://tile38.com/try)
 
