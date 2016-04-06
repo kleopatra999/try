@@ -2,7 +2,6 @@
 
 Try Tile38 is an HTML5 + Canvas demo app written entirely in Go.
 
-[Try Tile38](http://tile38.com/try)
 
 ## Contact
 Josh Baker [@tidwall](http://twitter.com/tidwall)
